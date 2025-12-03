@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관리자 대시보드</title>
+    <style>
+        body { font-family: 'Arial', sans-serif; padding: 20px; background-color: #ecf0f1; }
+        .container { max-width: 1000px; margin: 0 auto; padding: 30px; background-color: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+        h1 { color: #e74c3c; text-align: center; margin-bottom: 30px; }
+        .summary { display: flex; justify-content: space-around; margin-bottom: 30px; text-align: center; }
+        .summary-box { padding: 20px; border-radius: 8px; flex-basis: 30%; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); }
+        .summary-box h4 { margin-top: 0; color: #2c3e50; }
+        .summary-box p { font-size: 28px; font-weight: bold; margin: 5px 0; }
+        #checked-box { background-color: #d4f7d4; color: #27ae60; }
+        #missing-box { background-color: #f7d4d4; color: #c0392b; }
+        #total-box { background-color: #d4e7f7; color: #3498db; }
+        
+        h2 { border-bottom: 2px solid #bdc3c7; padding-bottom: 5px; margin-top: 40px; color: #2c3e50; }
+        
+        .list-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .list-table th, .list-table td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        .list-table th { background-color: #f2f2f2; }
+        
+        .missing-list { background-color: #f7f7f7; padding: 15px; border: 1px solid #c0392b; border-radius: 5px; }
+        .missing-list span { display: inline-block; padding: 5px 8px; margin: 4px; background-color: #e74c3c; color: white; border-radius: 3px; font-weight: bold; }
+
+        .management-section { background-color: #eaf2f8; padding: 20px; border-radius: 8px; margin-top: 30px; }
+        .roster-input-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        .roster-input-group input { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+        .roster-input-group button { padding: 10px 15px; background-color: #2ecc71; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .roster-input-group button.delete { background-color: #e74c3c; }
+        #roster-display { background-color: white; padding: 10px; border: 1px solid #ddd; border-radius: 5px; max-height: 200px; overflow-y: auto; }
+        #roster-status { margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>면학 인원 점검 관리자 대시보드 📊</h1>
+        <p style="text-align: right; color: #34495e;">현재 날짜: <span id="current-date"></span></p>
+        <button onclick="updateDashboard()" style="width: 100%; padding: 10px; background-color: #1abc9c; color: white; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 20px;">현황 새로고침</button>
+
+        <div class="summary">
+            <div id="total-box" class="summary-box">
+                <h4>총 인원</h4>
+                <p id="total-count">0</p>
+            </div>
+            <div id="checked-box" class="summary-box">
+                <h4>체크인 완료</h4>
+                <p id="checked-count">0</p>
+            </div>
+            <div id="missing-box" class="summary-box">
+                <h4>미체크 인원</h4>
+                <p id="missing-count">0</p>
+            </div>
+        </div>
+
+        <h2>🚫 미체크 학생 목록 (학번)</h2>
+        <div id="missing-students-list" class="missing-list">
+            </div>
+
+        <h2>✅ 체크인 완료 명단</h2>
+        <table class="list-table">
+            <thead>
+                <tr><th>학번</th><th>반</th><th>번호</th><th>체크인 장소</th><th>시간</th></tr>
+            </thead>
+            <tbody id="checkin-table-body">
+                </tbody>
+        </table>
+
+        <div class="management-section">
+            <h2>⚙️ 학생 명단 관리 (총 명단: <span id="current-roster-count">0</span>명)</h2>
+            <div id="roster-management">
+                <div id="roster-setup">
+                    <p style="color: #e74c3c; font-weight: bold;">명단이 비어 있습니다. 초기 명단(1학년 전체)을 생성하거나 아래에서 수동으로 추가하세요.</p>
+                    <button onclick="generateAndSaveInitialRoster()" style="background-color: #3498db;">초기 10101~11330 명단 자동 생성</button>
+                    <hr>
+                </div>
+                
+                <div class="roster-input-group">
+                    <input type="text" id="roster-id-input" placeholder="추가/삭제할 5자리 학번 입력 (예: 20101)">
+                    <button onclick="addStudent()">학번 추가</button>
+                    <button onclick="deleteStudent()" class="delete">학번 삭제</button>
+                </div>
+            </div>
+            <p id="roster-status"></p>
+            <h3>현재 등록된 학번 목록</h3>
+            <div id="roster-display"></div>
+        </div>
+    </div>
+
+    <script>
+        // -------------------------------------
+        // 1. 공통 설정 및 데이터 키
+        // -------------------------------------
+        const TOTAL_CLASSES = 13;
+        const STUDENTS_PER_CLASS = 30;
+        const DATA_KEY = 'dailyCheckinData'; 
+        const ROSTER_KEY = 'fullRoster'; 
+
+        // -------------------------------------
+        // 2. 유틸리티 함수
+        // -------------------------------------
+        function getTodayDate() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}${month}${day}`;
+        }
+        
+        function loadCheckinData() {
+            const today = getTodayDate();
+            let storedData;
+            try {
+                storedData = JSON.parse(localStorage.getItem(DATA_KEY));
+            } catch (e) {
+                return [];
+            }
+            if (storedData && storedData.date === today) {
+                return storedData.checkins;
+            }
+            return [];
+        }
+
+        function loadFullRoster() {
+            try {
+                const rosterString = localStorage.getItem(ROSTER_KEY);
+                return rosterString ? JSON.parse(rosterString) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+        
+        function saveFullRoster(rosterArray) {
+            rosterArray.sort((a, b) => a.localeCompare(b));
+            localStorage.setItem(ROSTER_KEY, JSON.stringify(rosterArray));
+        }
+
+        function validateIdFormat(id) {
+            return /^\d{5}$/.test(id);
+        }
+
+        // -------------------------------------
+        // 3. 명단 관리 함수
+        // -------------------------------------
+        
+        function generateAndSaveInitialRoster() {
+            const roster = [];
+            for (let classNum = 1; classNum <= TOTAL_CLASSES; classNum++) {
+                const classStr = String(classNum).padStart(2, '0');
+                for (let studentNum = 1; studentNum <= STUDENTS_PER_CLASS; studentNum++) {
+                    const studentStr = String(studentNum).padStart(2, '0');
+                    roster.push(`1${classStr}${studentStr}`); 
+                }
+            }
+            saveFullRoster(roster);
+            updateRosterDisplay();
+            updateDashboard();
+            document.getElementById('roster-status').textContent = `✅ 초기 명단 ${roster.length}명 (1학년 전체)이 생성되었습니다.`;
+        }
+
+        function addStudent() {
+            const inputElement = document.getElementById('roster-id-input');
+            const newId = inputElement.value.trim();
+            const statusElement = document.getElementById('roster-status');
+            
+            if (!validateIdFormat(newId)) {
+                statusElement.textContent = `⚠️ 학번 ${newId}는 유효한 5자리 숫자 형식이 아닙니다.`;
+                return;
+            }
+            
+            let roster = loadFullRoster();
+            if (roster.includes(newId)) {
+                statusElement.textContent = `❌ 학번 ${newId}는 이미 명단에 있습니다.`;
+                return;
+            }
+            
+            roster.push(newId);
+            saveFullRoster(roster); 
+            statusElement.textContent = `✅ 학번 ${newId}가 명단에 추가되었습니다.`;
+            inputElement.value = '';
+            updateRosterDisplay();
+            updateDashboard();
+        }
+        
+        function deleteStudent() {
+            const inputElement = document.getElementById('roster-id-input');
+            const deleteId = inputElement.value.trim();
+            const statusElement = document.getElementById('roster-status');
+            
+            if (!validateIdFormat(deleteId)) {
+                statusElement.textContent = `⚠️ 학번 ${deleteId}는 유효한 5자리 숫자 형식이 아닙니다.`;
+                return;
+            }
+            
+            let roster = loadFullRoster();
+            const initialLength = roster.length;
+            
+            roster = roster.filter(id => id !== deleteId);
+            
+            if (roster.length === initialLength) {
+                statusElement.textContent = `❌ 학번 ${deleteId}는 명단에 없습니다.`;
+                return;
+            }
+            
+            saveFullRoster(roster); 
+            statusElement.textContent = `✅ 학번 ${deleteId}가 명단에서 삭제되었습니다.`;
+            inputElement.value = '';
+            updateRosterDisplay();
+            updateDashboard();
+        }
+
+        function updateRosterDisplay() {
+            const roster = loadFullRoster();
+            const displayElement = document.getElementById('roster-display');
+            const setupSection = document.getElementById('roster-setup');
+
+            document.getElementById('current-roster-count').textContent = roster.length;
+
+            if (roster.length === 0) {
+                displayElement.innerHTML = '<p style="text-align: center; color: #e74c3c;">현재 등록된 학생이 없습니다.</p>';
+                setupSection.style.display = 'block';
+            } else {
+                displayElement.innerHTML = roster.map(id => `<span style="padding-right: 10px; display: inline-block;">${id}</span>`).join('');
+                setupSection.style.display = 'none';
+            }
+        }
+
+        // -------------------------------------
+        // 4. 대시보드 업데이트 로직
+        // -------------------------------------
+        function updateDashboard() {
+            document.getElementById('current-date').textContent = new Date().toLocaleDateString('ko-KR');
+
+            const fullRoster = loadFullRoster();
+            const totalCount = fullRoster.length;
+            
+            const checkinData = loadCheckinData();
+            const checkedCount = checkinData.length;
+            const missingCount = totalCount - checkedCount;
+
+            document.getElementById('total-count').textContent = totalCount;
+            document.getElementById('checked-count').textContent = checkedCount;
+            document.getElementById('missing-count').textContent = missingCount;
+
+            const checkedIds = new Set(checkinData.map(item => item.id));
+            const missingStudents = fullRoster.filter(id => !checkedIds.has(id));
+            
+            const missingListElement = document.getElementById('missing-students-list');
+            missingListElement.innerHTML = missingStudents.length > 0
+                ? missingStudents.map(id => `<span>${id}</span>`).join('')
+                : '<p style="color: #27ae60; font-weight: bold;">모든 학생이 체크인 완료했습니다.</p>';
+
+            const tableBody = document.getElementById('checkin-table-body');
+            tableBody.innerHTML = ''; 
+
+            checkinData.sort((a, b) => a.id.localeCompare(b.id)); 
+
+            checkinData.forEach(item => {
+                const id = item.id;
+                const classNum = id.length >= 3 ? parseInt(id.substring(1, 3)) : '?'; 
+                const studentNum = id.length === 5 ? parseInt(id.substring(3, 5)) : '?'; 
+                
+                const row = tableBody.insertRow();
+                row.insertCell().textContent = id;
+                row.insertCell().textContent = `${isNaN(classNum) ? '?' : classNum}반`;
+                row.insertCell().textContent = `${isNaN(studentNum) ? '?' : studentNum}번`;
+                row.insertCell().textContent = item.classroom; 
+                row.insertCell().textContent = item.time;
+            });
+        }
+
+        // 페이지 로드 시 대시보드 및 명단 업데이트
+        document.addEventListener('DOMContentLoaded', () => {
+            updateRosterDisplay();
+            updateDashboard();
+        });
+    </script>
+</body>
+</html>
